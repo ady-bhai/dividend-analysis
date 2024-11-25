@@ -2,38 +2,55 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 
-# Load data
+# Load the dataset
 @st.cache_data
 def load_data():
-    # Ensure the file path matches your dataset
-    file_path = "divfcfe (1).xls"  # Replace with your actual file name
-    data = pd.read_excel(file_path, engine="xlrd")
+    file_path = "divfcfe (1).xls"  # Ensure this file is present in the working directory
+    data = pd.read_excel(
+        file_path,
+        sheet_name="Industry Averages",  # Specify the correct sheet
+        skiprows=7  # Skip to the header row (row 8)
+    )
     return data
 
 # Preprocessing data
 def preprocess_data(data):
-    # List of numeric columns to preprocess
+    # Drop irrelevant columns (e.g., URLs or unrelated data)
+    data = data.drop(columns=[col for col in data.columns if "http" in col], errors="ignore")
+    
+    # Clean and normalize column names
+    data.columns = data.columns.str.strip()  # Remove leading/trailing spaces
+    data.columns = data.columns.str.replace("\n", " ", regex=True)  # Replace newlines with spaces
+    
+    # List of corrected numeric columns
     numeric_cols = [
-        "Dividends", "Net Income", "Payout", "Dividends + Buybacks", 
-        "Cash Return as % of Income", "FCFE (before debt cash flows)", 
-        "FCFE (after debt cash flows)", "Net Cash Returns as % of FCFE", 
-        "Net Cash Returns as % of Net Income", "Cash/ Firm Value"
+        "Dividends", 
+        "Net Income", 
+        "Payout", 
+        "Dividends + Buybacks", 
+        "Cash Return as % of Net Income", 
+        "FCFE (before debt cash flows)", 
+        "FCFE (after debt cash flows)", 
+        "Net Cash Returned/FCFE (pre-debt)", 
+        "Net Cash Returned/FCFE (post-debt)", 
+        "Net Cash Returned/ Net Income", 
+        "Cash/ Firm Value"
     ]
     
+    # Process numeric columns
     for col in numeric_cols:
         if col in data.columns:
-            # Remove commas and dollar signs from numeric columns
-            data[col] = pd.to_numeric(data[col].astype(str).str.replace(",", "").str.replace("$", ""), errors="coerce")
-        else:
-            st.warning(f"Column '{col}' not found in the dataset and will be skipped.")
+            data[col] = pd.to_numeric(
+                data[col].astype(str).str.replace(",", "").str.replace("$", ""), errors="coerce"
+            )
+    
+    # Drop extra rows with all NaN values
+    data = data.dropna(how="all")
     return data
 
 # Load and preprocess data
 data = load_data()
 data = preprocess_data(data)
-
-# Debugging: Display dataset columns
-st.write("Dataset Columns:", data.columns.tolist())
 
 # App title and description
 st.title("Industry-Wise Dividend Analysis")
@@ -46,9 +63,9 @@ st.sidebar.header("User Input Filters")
 # Dropdown for metric selection
 available_metrics = [
     "Dividends", "Net Income", "Payout", "Dividends + Buybacks",
-    "Cash Return as % of Income", "FCFE (before debt cash flows)",
-    "FCFE (after debt cash flows)", "Net Cash Returns as % of FCFE",
-    "Net Cash Returns as % of Net Income", "Cash/ Firm Value"
+    "Cash Return as % of Net Income", "FCFE (before debt cash flows)",
+    "FCFE (after debt cash flows)", "Net Cash Returned/FCFE (pre-debt)",
+    "Net Cash Returned/FCFE (post-debt)", "Net Cash Returned/ Net Income", "Cash/ Firm Value"
 ]
 selected_metric = st.sidebar.selectbox(
     "Select Metric to Analyze:",
@@ -56,49 +73,41 @@ selected_metric = st.sidebar.selectbox(
 )
 
 # Multiselect for industries
-if "Industry name" in data.columns:
-    selected_industries = st.sidebar.multiselect(
-        "Select Industries to Compare:",
-        options=data["Industry name"].unique(),
-        default=data["Industry name"].unique()
-    )
-else:
-    st.error("Column 'Industry name' not found in the dataset. Please check the dataset structure.")
-    selected_industries = []
+selected_industries = st.sidebar.multiselect(
+    "Select Industries to Compare:",
+    options=data["Industry name"].unique(),
+    default=data["Industry name"].unique()
+)
 
 # Filter data based on user input
-filtered_data = data[data["Industry name"].isin(selected_industries)] if "Industry name" in data.columns else data
+filtered_data = data[data["Industry name"].isin(selected_industries)]
 
 # Main visualization: Bar chart for selected metric
-if selected_metric in data.columns:
-    st.subheader(f"Bar Chart: {selected_metric}")
-    bar_chart = px.bar(
-        filtered_data,
-        x="Industry name",
-        y=selected_metric,
-        title=f"{selected_metric} by Industry",
-        labels={"Industry name": "Industry", selected_metric: selected_metric},
-        color="Industry name",
-    )
-    bar_chart.update_layout(showlegend=False, xaxis_title="Industry", yaxis_title=selected_metric)
-    st.plotly_chart(bar_chart)
-else:
-    st.error(f"The selected metric '{selected_metric}' is not available in the dataset.")
+st.subheader(f"Bar Chart: {selected_metric}")
+bar_chart = px.bar(
+    filtered_data,
+    x="Industry name",
+    y=selected_metric,
+    title=f"{selected_metric} by Industry",
+    labels={"Industry name": "Industry", selected_metric: selected_metric},
+    color="Industry name",
+)
+bar_chart.update_layout(showlegend=False, xaxis_title="Industry", yaxis_title=selected_metric)
+st.plotly_chart(bar_chart)
 
 # Additional visualization: Top 5 industries for the selected metric
-if selected_metric in data.columns:
-    st.subheader(f"Top 5 Industries by {selected_metric}")
-    top_5_data = filtered_data.nlargest(5, selected_metric)
-    top_5_chart = px.bar(
-        top_5_data,
-        x="Industry name",
-        y=selected_metric,
-        title=f"Top 5 Industries by {selected_metric}",
-        labels={"Industry name": "Industry", selected_metric: selected_metric},
-        color="Industry name",
-    )
-    top_5_chart.update_layout(showlegend=False, xaxis_title="Industry", yaxis_title=selected_metric)
-    st.plotly_chart(top_5_chart)
+st.subheader(f"Top 5 Industries by {selected_metric}")
+top_5_data = filtered_data.nlargest(5, selected_metric)
+top_5_chart = px.bar(
+    top_5_data,
+    x="Industry name",
+    y=selected_metric,
+    title=f"Top 5 Industries by {selected_metric}",
+    labels={"Industry name": "Industry", selected_metric: selected_metric},
+    color="Industry name",
+)
+top_5_chart.update_layout(showlegend=False, xaxis_title="Industry", yaxis_title=selected_metric)
+st.plotly_chart(top_5_chart)
 
 # Additional visualization: Scatter plot of Dividends vs Net Income
 if "Dividends" in data.columns and "Net Income" in data.columns:
@@ -115,8 +124,6 @@ if "Dividends" in data.columns and "Net Income" in data.columns:
     )
     scatter_chart.update_layout(xaxis_title="Net Income", yaxis_title="Dividends")
     st.plotly_chart(scatter_chart)
-else:
-    st.warning("Required columns for scatter plot ('Dividends' and 'Net Income') are not available in the dataset.")
 
 # Add a data table for user exploration
 st.subheader("Explore the Data")
